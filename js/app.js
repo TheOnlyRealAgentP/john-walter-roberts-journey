@@ -187,6 +187,7 @@
     });
   }
 
+  const areaLayer = L.layerGroup().addTo(map);
   const discLayer = L.layerGroup().addTo(map);
   const eventLayer = L.layerGroup().addTo(map);
   const branchLayer = L.layerGroup().addTo(map);
@@ -239,8 +240,8 @@
   function popupOptions(extra) {
     const o = obstruction();
     return Object.assign({
-      maxWidth: 300,
-      minWidth: 220,
+      maxWidth: 320,
+      minWidth: 240,
       autoPanPaddingTopLeft: L.point(o.left + 24, o.top + 70),
       autoPanPaddingBottomRight: L.point(o.right + 64, o.bottom + 24)
     }, extra || {});
@@ -285,15 +286,33 @@
   /* ---------- popups ---------- */
 
   function discoveryHTML(d) {
-    return `<div class="pop-kicker">✦ Discovery</div>
+    return `${photoHTML(d.img, "pop-photo")}<div class="pop-kicker">✦ Discovery</div>
       <div class="pop-title">${esc(d.title)}</div>
       <p class="pop-text">${esc(d.text)}</p>
       ${d.source ? `<p class="pop-source">Source: ${esc(d.source)}</p>` : ""}`;
   }
 
+  // a credited photo: a key into window.PHOTOS (data/photos.js), or { key, caption }
+  const PHOTOS = window.PHOTOS || {};
+  function resolvePhoto(ph) {
+    if (!ph) return null;
+    if (typeof ph === "string") ph = { key: ph };
+    return ph.key ? Object.assign({}, PHOTOS[ph.key] || {}, ph) : ph;
+  }
+  function photoHTML(ph, cls) {
+    ph = resolvePhoto(ph);
+    if (!ph || !ph.src) return "";
+    const credit = ph.credit
+      ? `<span class="credit">${ph.href ? `<a href="${esc(ph.href)}" target="_blank" rel="noopener">${esc(ph.credit)}</a>` : esc(ph.credit)}</span>`
+      : "";
+    return `<figure class="${cls}"><img src="${esc(ph.src)}" alt="${esc(ph.caption || "")}" loading="lazy">
+      ${ph.caption || credit ? `<figcaption>${esc(ph.caption || "")} ${credit}</figcaption>` : ""}</figure>`;
+  }
+
   function eventHTML(e, withBack) {
     const c = (CAT[e.cat] || CAT.world).color;
-    return `<div class="pop-kicker event" style="--c:${c}">Meanwhile · ${esc(fmtDate(e.date))}</div>
+    return `${photoHTML(e.img, "pop-photo")}
+      <div class="pop-kicker event" style="--c:${c}">Meanwhile · ${esc(fmtDate(e.date))}</div>
       <div class="pop-title">${esc(e.title)}</div>
       <p class="pop-text">${esc(e.text)}</p>
       ${e.place ? `<p class="pop-source">${esc(e.place)}</p>` : ""}
@@ -420,8 +439,8 @@
     return `<div class="kicker"><span>Stop ${i + 1} of ${STOPS.length}</span><span class="dot">·</span>
         <span>${esc(fmtDate(s.date))}</span><span class="dot">·</span><span>${ageTxt}</span></div>
       <h2>${esc(s.title)}</h2>
-      <p class="place">${PIN_SVG}<span>${esc(s.place)}</span></p>
-      ${s.photo ? `<figure class="photo"><img src="${esc(s.photo.src)}" alt="${esc(s.photo.caption || "")}"><figcaption>${esc(s.photo.caption || "")}</figcaption></figure>` : ""}
+      <p class="place">${PIN_SVG}<span>${esc(s.place)}${s.areaKm ? ` <em class="approx">(general area)</em>` : ""}</span></p>
+      ${photoHTML(s.photo, "photo")}
       <div class="story">${paragraphs(s.story)}</div>
       ${discBtns ? `<div class="discover-row">${discBtns}</div>` : ""}
       ${evs ? `<section class="meanwhile"><h3>Meanwhile in the world</h3><ul class="event-list">${evs}</ul></section>` : ""}`;
@@ -471,6 +490,7 @@
     const ch = chapters[i];
     map.closePopup();
     discLayer.clearLayers();
+    areaLayer.clearLayers();
     eventLayer.clearLayers();
     branchLayer.clearLayers();
     discMarkers = [];
@@ -499,6 +519,13 @@
       setRoute(ch.idx, prev === i - 1);
       setTimeline(yearFrac(s.date), String(parseDate(s.date).y), ch.events.map((e) => e.id), ch.idx);
       flyTo([s.lat, s.lng], s.zoom || 8);
+      if (s.areaKm) {
+        // the records only name a town or district, so show an honest area instead of a fake exact spot
+        L.circle([s.lat, s.lng], {
+          radius: s.areaKm * 1000, color: "#8b2e1f", weight: 2, dashArray: "6 6",
+          fillColor: "#8b2e1f", fillOpacity: 0.08, interactive: false
+        }).addTo(areaLayer);
+      }
       addDiscoveryPins(ch);
       ch.events.forEach((e) => {
         if (e.lat == null) return;
@@ -569,7 +596,7 @@
     L.polyline(arc([s.lat, s.lng], [d.lat, d.lng], 60), {
       color: "#b07d1a", weight: 2.5, dashArray: "3 8", lineCap: "round", interactive: false
     }).addTo(branchLayer);
-    flyToBounds(L.latLngBounds([[s.lat, s.lng], [d.lat, d.lng]]), 5);
+    flyToBounds(L.latLngBounds([[s.lat, s.lng], [d.lat, d.lng]]), 15);
   }
 
   function revealDiscovery(k) {
