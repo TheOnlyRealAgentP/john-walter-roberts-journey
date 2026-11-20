@@ -108,11 +108,37 @@
   }).setView([30, -88], 5);
 
   L.control.zoom({ position: "topright" }).addTo(map);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    className: "base-tiles",
+
+  // Tiles only load once the camera lands. Loading every zoom level the camera
+  // passes through (Leaflet's default) is what made the fly-to animation stall.
+  const TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+  const tileOpts = { maxZoom: 19, updateWhenZooming: false, updateWhenIdle: true, keepBuffer: 2 };
+
+  // Low-detail backdrop that stays loaded, so a zoomed-out camera never shows a blank void
+  L.tileLayer(TILE_URL, Object.assign({}, tileOpts, { maxNativeZoom: 5 })).addTo(map);
+  L.tileLayer(TILE_URL, Object.assign({}, tileOpts, {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-  }).addTo(map);
+  })).addTo(map);
+
+  // Warm the browser cache with the tiles a view will need, before we fly there
+  function prefetchView(latlng, zoom) {
+    const z = Math.round(zoom);
+    const size = map.getSize();
+    const c = map.project(centerFor(latlng, z), z);
+    const lo = c.subtract(size.divideBy(2)).divideBy(256).floor();
+    const hi = c.add(size.divideBy(2)).divideBy(256).floor();
+    const n = Math.pow(2, z);
+    for (let x = lo.x; x <= hi.x; x++) {
+      for (let y = Math.max(0, lo.y); y <= Math.min(n - 1, hi.y); y++) {
+        const img = new Image();
+        img.src = TILE_URL.replace("{z}", z).replace("{x}", ((x % n) + n) % n).replace("{y}", y);
+      }
+    }
+  }
+  function prefetchChapter(i) {
+    const ch = chapters[i];
+    if (ch && ch.type === "stop") prefetchView([ch.stop.lat, ch.stop.lng], ch.stop.zoom || 8);
+  }
 
   // gentle arcs between stops, like routes drawn on an old travel map
   function arc(a, b, n) {
@@ -191,14 +217,24 @@
       paddingBottomRight: [o.right + 70, o.bottom + 40]
     };
   }
+  // short hops get short flights; crossing the Gulf or an ocean gets a longer one
+  function flightTime(target, zoom) {
+    const km = map.getCenter().distanceTo(target) / 1000;
+    const dz = Math.abs(map.getZoom() - zoom);
+    if (km < 60) return dz > 2 ? 1.1 : 0.8;
+    if (km < 600) return 1.5;
+    if (km < 3000) return 2;
+    return 2.4;
+  }
   function flyTo(latlng, zoom) {
-    if (reduceMotion) return map.setView(centerFor(latlng, zoom), zoom, { animate: false });
-    map.flyTo(centerFor(latlng, zoom), zoom, { duration: 2 });
+    const c = centerFor(latlng, zoom);
+    if (reduceMotion) return map.setView(c, zoom, { animate: false });
+    map.flyTo(c, zoom, { duration: flightTime(c, zoom) });
   }
   function flyToBounds(bounds, maxZoom) {
     const opts = Object.assign(fitPadding(), { maxZoom: maxZoom || 9 });
     if (reduceMotion) return map.fitBounds(bounds, Object.assign(opts, { animate: false }));
-    map.flyToBounds(bounds, Object.assign(opts, { duration: 2 }));
+    map.flyToBounds(bounds, Object.assign(opts, { duration: flightTime(bounds.getCenter(), map.getBoundsZoom(bounds)) }));
   }
   function popupOptions(extra) {
     const o = obstruction();
@@ -485,6 +521,8 @@
       }
     }
     $("#card .card-body").scrollTop = 0;
+    // while this stop is being presented, quietly fetch the next stop's map tiles
+    map.once("moveend", () => setTimeout(() => { if (current === i) prefetchChapter(i + 1); }, 400));
   }
 
   function addDiscoveryPins(ch) {

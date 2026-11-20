@@ -48,7 +48,8 @@ button { font: inherit; color: inherit; }
 }
 
 /* OpenStreetMap tiles aged to look like an old atlas */
-.base-tiles { filter: sepia(0.65) saturate(0.6) hue-rotate(-6deg) brightness(1.04) contrast(0.9); }
+/* one filter on the whole tile pane is far cheaper than one per tile */
+.leaflet-tile-pane { filter: sepia(0.65) saturate(0.6) hue-rotate(-6deg) brightness(1.04) contrast(0.9); }
 
 /* old-paper vignette over the map */
 #map::after {
@@ -101,6 +102,7 @@ button { font: inherit; color: inherit; }
 }
 
 .discovery-pin {
+  position: relative;
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -111,14 +113,24 @@ button { font: inherit; color: inherit; }
   color: var(--ink);
   background: radial-gradient(circle at 35% 30%, #ffe9a8, #e2b347 70%, #b07d1a);
   border: 2px solid #fff8e6;
-  box-shadow: 0 0 0 0 rgba(226, 179, 71, 0.7), 0 3px 8px rgba(42, 32, 23, 0.35);
-  animation: glow 2.2s ease-in-out infinite;
+  box-shadow: 0 3px 8px rgba(42, 32, 23, 0.35);
   cursor: pointer;
 }
-.discovery-pin.is-opened { animation: none; background: #efe2bd; color: var(--ink-faint); }
+/* glow ring animates only transform/opacity, so it stays smooth while the map moves */
+.discovery-pin::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 3px solid rgba(226, 179, 71, 0.8);
+  animation: glow 2.2s ease-out infinite;
+  pointer-events: none;
+}
+.discovery-pin.is-opened { background: #efe2bd; color: var(--ink-faint); }
+.discovery-pin.is-opened::before { display: none; }
 @keyframes glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(226, 179, 71, 0.65), 0 3px 8px rgba(42, 32, 23, 0.35); }
-  50% { box-shadow: 0 0 0 10px rgba(226, 179, 71, 0), 0 3px 8px rgba(42, 32, 23, 0.35); }
+  from { transform: scale(0.9); opacity: 0.9; }
+  to { transform: scale(1.7); opacity: 0; }
 }
 
 .event-pin {
